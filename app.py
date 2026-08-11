@@ -170,14 +170,14 @@ def parse_html_to_dataframe(html_content):
 
 
 # ==========================================
-# 3. AUTOMATED DATA LOADER FROM GITHUB
+# 3. AUTOMATED DATA LOADER FROM data.html
 # ==========================================
 if os.path.exists("data.html"):
   with open("data.html", "r", encoding="utf-8") as f:
     raw_df = parse_html_to_dataframe(f.read())
 else:
   st.error(
-      "File 'data.html' not found. Please ensure it is pushed to your GitHub"
+      "File 'data.html' not found. Please make sure it is uploaded in your"
       " repository."
   )
   st.stop()
@@ -619,38 +619,7 @@ else:
           mime="application/zip",
       )
   st.markdown("</div>", unsafe_allow_html=True)
-
-    raw_instructor = instructor_input["value"].strip() if instructor_input else ""
-    raw_section = section_input["value"].strip() if section_input else ""
-
-    teacher = "TBD" if "لم يحدد" in raw_instructor else raw_instructor
-
-    venue_list = []
-    hall = ""
-
-    if "@t" in raw_section and "@r" in raw_section:
-      sessions = raw_section.split("@n")
-      for session in sessions:
-        session = session.strip()
-        if not session:
-          continue
-
-        parts = session.split("@t")
-        days = parts[0].strip().split()
-        time_and_room = parts[1].split("@r")
-        time_str = time_and_room[0].strip()
-        room = time_and_room[1].strip()
-
-        start_time = time_str.split("-")[0].strip()
-        try:
-          raw_hour = int(start_time.split(":")[0].strip())
-          if " م" in start_time and raw_hour != 12:
-            raw_hour += 12
-          elif " ص" in start_time and raw_hour == 12:
-            raw_hour = 0
-          hour = f"{raw_hour:02d}"
-        except ValueError:
-          hour = time_str.split(":")[0].strip()
+import io
 
         for day in days:
           venue_list.append(f"{day}- {hour}")
@@ -678,22 +647,17 @@ else:
 
 
 # ==========================================
-# 3. SIDEBAR TEXT INPUT FOR HTML DATA
+# 3. AUTOMATED DATA LOADER FROM data.html
 # ==========================================
-st.sidebar.header("Schedule Data Input")
-st.sidebar.caption("Paste your raw HTML text below to update the schedule.")
-
-html_input_text = st.sidebar.text_area(
-    "Paste HTML Code Here:", height=200, placeholder="Paste <table> or HTML here..."
-)
-
-if not html_input_text.strip():
-  st.warning(
-      "👈 Please paste your schedule HTML text into the sidebar box to begin."
+if os.path.exists("data.html"):
+  with open("data.html", "r", encoding="utf-8") as f:
+    raw_df = parse_html_to_dataframe(f.read())
+else:
+  st.error(
+      "File 'data.html' not found. Please make sure it is uploaded in your"
+      " repository."
   )
   st.stop()
-
-raw_df = parse_html_to_dataframe(html_input_text)
 
 
 @st.cache_data
@@ -726,7 +690,6 @@ parsed_df = parse_schedule_blocks(raw_df)
 # ==========================================
 # 4. DYNAMIC SIDEBAR FILTERS (SUN - THU)
 # ==========================================
-st.sidebar.markdown("---")
 st.sidebar.header("Day & Time Matrix Filters")
 st.sidebar.caption("Check days and adjust acceptable hours (08 to 18).")
 
