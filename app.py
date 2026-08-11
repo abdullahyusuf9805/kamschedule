@@ -1,5 +1,4 @@
 import io
-import os
 import zipfile
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -136,9 +135,9 @@ def parse_html_to_dataframe(html_content):
         start_time = time_str.split("-")[0].strip()
         try:
           raw_hour = int(start_time.split(":")[0].strip())
-          if "م" in start_time and raw_hour != 12:
+          if " م" in start_time and raw_hour != 12:
             raw_hour += 12
-          elif "ص" in start_time and raw_hour == 12:
+          elif " ص" in start_time and raw_hour == 12:
             raw_hour = 0
           hour = f"{raw_hour:02d}"
         except ValueError:
@@ -170,17 +169,22 @@ def parse_html_to_dataframe(html_content):
 
 
 # ==========================================
-# 3. AUTOMATED DATA LOADER FROM GITHUB
+# 3. SIDEBAR TEXT INPUT FOR HTML DATA
 # ==========================================
-if os.path.exists("data.html"):
-  with open("data.html", "r", encoding="utf-8") as f:
-    raw_df = parse_html_to_dataframe(f.read())
-else:
-  st.error(
-      "File 'data.html' not found. Please ensure it is pushed to your GitHub"
-      " repository."
+st.sidebar.header("Schedule Data Input")
+st.sidebar.caption("Paste your raw HTML text below to update the schedule.")
+
+html_input_text = st.sidebar.text_area(
+    "Paste HTML Code Here:", height=200, placeholder="Paste <table> or HTML here..."
+)
+
+if not html_input_text.strip():
+  st.warning(
+      "👈 Please paste your schedule HTML text into the sidebar box to begin."
   )
   st.stop()
+
+raw_df = parse_html_to_dataframe(html_input_text)
 
 
 @st.cache_data
@@ -213,6 +217,7 @@ parsed_df = parse_schedule_blocks(raw_df)
 # ==========================================
 # 4. DYNAMIC SIDEBAR FILTERS (SUN - THU)
 # ==========================================
+st.sidebar.markdown("---")
 st.sidebar.header("Day & Time Matrix Filters")
 st.sidebar.caption("Check days and adjust acceptable hours (08 to 18).")
 
@@ -619,4 +624,3 @@ else:
           mime="application/zip",
       )
   st.markdown("</div>", unsafe_allow_html=True)
-
