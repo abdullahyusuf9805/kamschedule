@@ -76,20 +76,6 @@ st.title("Dynamic Timetable Generator")
 
 
 def parse_html_to_dataframe(html_content):
-  sr_mapping = {
-      "القرآن الكريم 3": 1,
-      "تفسير آيات الأحكام 1": 2,
-      "توحيد 3": 3,
-      "أدلة الأحكام 1": 4,
-      "أحاديث الأحكام 2": 5,
-      "فقه العبادات 3": 6,
-      "النظام الدولي الخاص": 7,
-      "النحو 2": 8,
-      "مناهج البحث ومصادره في العلوم الشرعية": 9,
-      "نظام الزكاة والضرائب": 10,
-      "النظام الإداري": 11,
-  }
-
   soup = BeautifulSoup(html_content, "html.parser")
   extracted_rows = []
 
@@ -102,7 +88,6 @@ def parse_html_to_dataframe(html_content):
     code = cols[0].text.strip()
     name = cols[1].text.strip()
     course_id = cols[2].text.strip()
-    sr = sr_mapping.get(name, "")
     status = cols[5].text.strip()
 
     instructor_input = cols[6].find(
@@ -158,7 +143,6 @@ def parse_html_to_dataframe(html_content):
       venue_final = f"{venue_final}"
 
     extracted_rows.append({
-        "SR": sr,
         "CODE": code,
         "NAME": name,
         "ID": int(course_id) if course_id.isdigit() else course_id,
@@ -329,17 +313,13 @@ for code, group in valid_blocks_df.groupby("CODE"):
     })
 
 target_subjects = list(sections_by_subject.keys())
+total_required_subjects = len(all_subjects)
 
-if len(target_subjects) < 11:
-  st.error(
-      f"Only {len(target_subjects)} valid subjects remaining. (11 required)."
-      " Check your filters or rules."
+if len(target_subjects) < total_required_subjects:
+  st.warning(
+      f"Only {len(target_subjects)} out of {total_required_subjects} valid"
+      " subjects remaining after filters. Check your filters or rules."
   )
-  st.stop()
-elif len(target_subjects) > 11:
-  st.error("More than 11 unique Subject Codes found in data.")
-  st.stop()
-
 
 @st.cache_data
 def generate_schedules(subjects_dict, targets):
@@ -369,9 +349,11 @@ def generate_schedules(subjects_dict, targets):
   backtrack(0, [], set())
   return valid_schedules
 
-
-schedules = generate_schedules(sections_by_subject, target_subjects)
-
+schedules = (
+    generate_schedules(sections_by_subject, target_subjects)
+    if target_subjects
+    else []
+)
 
 def calculate_schedule_score(schedule):
   day_slots = {}
@@ -390,7 +372,6 @@ def calculate_schedule_score(schedule):
       gaps = span - len(times)
       total_gaps += gaps
   return total_gaps
-
 
 schedules = sorted(schedules, key=calculate_schedule_score)
 
