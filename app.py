@@ -7,6 +7,22 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from bs4 import BeautifulSoup
 import streamlit as st
+import time
+from datetime import datetime
+
+# --- GitHub Integration ---
+from github import Github
+
+# --- Selenium Imports for University Portal ---
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from PIL import Image
+from datetime import datetime, timedelta
 
 # ==========================================
 # 1. STREAMLIT CONFIGURATION & THEME STYLING
@@ -29,14 +45,12 @@ st.markdown(
             color: #ffffff;
         }
 
-        /* Responsive Title */
         h1 {
             font-size: clamp(1.2rem, 2.5vw, 2.2rem) !important;
             white-space: nowrap !important;
             color: #ffffff !important;
         }
 
-        /* STRICT ONE-LINE NAVIGATION BAR FOR PREV, SELECT, NEXT */
         .nav-row {
             display: flex;
             flex-direction: row;
@@ -53,7 +67,6 @@ st.markdown(
             flex: 1 1 auto !important;
         }
 
-        /* Center Download Button Container */
         .center-download {
             display: flex;
             flex-direction: column;
@@ -63,18 +76,220 @@ st.markdown(
             margin-top: 20px;
             text-align: center;
         }
+        
+        /* =========================================
+           UI TIGHTENING CSS (Squish Elements in Card) 
+           ========================================= */
+        
+        [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
+            padding: 1rem 0.8rem 0.5rem 0.8rem !important;
+            background-color: #1a1a1a !important;
+            border-radius: 8px !important;
+            border: 1px solid #2a2a2a !important;
+            margin-bottom: 12px !important;
+        }
+
+        [data-testid="stSidebar"] [data-testid="stTextInput"] {
+            margin-top: -10px !important;
+            margin-bottom: 0px !important;
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stTextInput"] input {
+            font-size: 0.85rem !important;
+            background-color: #121212 !important;
+            border-color: #333333 !important;
+        }
+
+        /* =========================================
+           NUCLEAR CSS: DESTROY TOOLTIPS & TICK BARS
+           ========================================= */
+        
+        [data-testid="stTickBar"], 
+        [data-testid="stTickBarMin"], 
+        [data-testid="stTickBarMax"] {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+        }
+
+        div[data-baseweb="tooltip"], 
+        div[role="tooltip"],
+        div[data-testid="stThumbValue"] {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+        }
+
+        div[data-baseweb="slider"] div[role="slider"] {
+            background-color: #ff4d4d !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        
+        div[data-baseweb="slider"][aria-disabled="true"] div[role="slider"] {
+            background-color: #555555 !important;
+        }
+
+        [data-testid="stHorizontalBlock"] {
+            align-items: center !important;
+        }
+        
     </style>
 """,
     unsafe_allow_html=True,
 )
 
 st.title("Dynamic Timetable Generator")
+import re
+
+html_content = ""
+# FIX: Use .get() to safely check if the session state exists yet
+if st.session_state.get("live_html_data"):
+    html_content = st.session_state.live_html_data
+elif os.path.exists("data.html"):
+    with open("data.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+# Search for the hidden comment we injected
+time_match = re.search(r"<!-- SYNC_TIME: (.*?) -->", html_content)
+updated_str = time_match.group(1) if time_match else "No data file found"
+
+st.markdown(
+    f"<p style='color: #a0a0a0; font-size: 0.9rem; margin-top: -12px; margin-bottom: 20px;'>"
+    f"🕒 <b>Last Update:</b> {updated_str}"
+    f"</p>",
+    unsafe_allow_html=True,
+)
 
 # ==========================================
-# 2. EMBEDDED HTML PARSER & DATA EXTRACTOR
+# 2. TWO-STEP INTERACTIVE SELENIUM LOGIC
 # ==========================================
 
+def init_browser_and_get_captcha():
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    
+    options.binary_location = "/usr/bin/chromium"
+    service = Service("/usr/bin/chromedriver")
+    
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    try:
+        driver.get("https://sso.iu.edu.sa")
+        time.sleep(2) 
+        
+        try:
+            uni_login_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'الجامعي') or contains(text(), 'Employee')]")
+            if uni_login_btn.is_displayed():
+                driver.execute_script("arguments[0].click();", uni_login_btn)
+                time.sleep(1)
+        except:
+            pass 
 
+        try:
+            captcha_img_element = driver.find_element(By.XPATH, "//img[contains(translate(@src, 'CAPTCHA', 'captcha'), 'captcha')]")
+        except:
+            captcha_img_element = driver.find_element(By.XPATH, "(//form//img)[last()]")
+            
+        img_bytes = captcha_img_element.screenshot_as_png
+        
+        st.session_state.live_driver = driver
+        st.session_state.captcha_img_bytes = img_bytes
+        st.session_state.waiting_for_captcha = True
+        
+    except Exception as e:
+        driver.quit()
+        raise Exception(f"Failed to initialize login page. {str(e)}")
+
+
+def submit_captcha_and_scrape(username, password, captcha_val):
+    driver = st.session_state.live_driver
+    try:
+        text_inputs = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.XPATH, "//input[@type='text' and not(@type='hidden')]"))
+        )
+        user_field = text_inputs[0]
+        captcha_input = text_inputs[-1] 
+        pass_field = driver.find_element(By.XPATH, "//input[@type='password']")
+        
+        user_field.clear()
+        user_field.send_keys(username)
+        pass_field.clear()
+        pass_field.send_keys(password)
+        captcha_input.clear()
+        captcha_input.send_keys(captcha_val)
+        
+        time.sleep(0.5) # Let React digest the text
+        
+        # FIX: Press ENTER instead of trying to click the button to guarantee form submission
+        captcha_input.send_keys(Keys.RETURN)
+        
+        try:
+            # Increased timeout to 15 seconds for slower server responses
+            WebDriverWait(driver, 15).until(EC.url_contains("Dashboard"))
+        except:
+            driver.save_screenshot("error_screenshot.png")
+            raise Exception("Login rejected! Please check your Student ID, Password, or CAPTCHA. (Note: The CAPTCHA expires if you wait too long to submit).")
+            
+        # --- POST-LOGIN NAVIGATION ---
+        driver.get("https://cas.iu.edu.sa/cas/eregister")
+        
+        WebDriverWait(driver, 35).until(
+            EC.url_contains("homeIndex.faces")
+        )
+        
+        electronic_reg_menu = WebDriverWait(driver, 25).until(
+            EC.presence_of_element_located((By.XPATH, "//a[contains(., 'التسجيل الإلكتروني') or contains(., 'Electronic')]"))
+        )
+        driver.execute_script("arguments[0].click();", electronic_reg_menu)
+        time.sleep(1.5) 
+        
+        course_plan_menu = WebDriverWait(driver, 25).until(
+            EC.presence_of_element_located((By.XPATH, "//a[contains(., 'المقررات المطروحة وفق الخطة') or contains(., 'Course')]"))
+        )
+        driver.execute_script("arguments[0].click();", course_plan_menu)
+        
+        # Wait exactly 5 seconds for the table to load
+        time.sleep(5)
+        
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        target_tbody = None
+        
+        for tbody in soup.find_all("tbody"):
+            first_tr = tbody.find("tr")
+            if first_tr and first_tr.has_attr("class"):
+                target_tbody = tbody
+                break
+                
+        if target_tbody is None:
+            driver.save_screenshot("error_screenshot.png")
+            raise Exception("Could not find the <tbody> containing <tr class=>. The table did not load properly.")
+            
+# --- INJECT KSA TIMESTAMP DIRECTLY INTO HTML ---
+        from datetime import timedelta # Just in case it's missing at the top
+        
+        ksa_time = datetime.utcnow() + timedelta(hours=3)
+        time_str = ksa_time.strftime("%d/%m/%Y at %I:%M %p")
+        
+        final_html = f"<!-- SYNC_TIME: {time_str} -->\n" + str(target_tbody)
+        
+        return final_html
+        
+    finally:
+        driver.quit()
+        st.session_state.live_driver = None
+        st.session_state.waiting_for_captcha = False
+
+
+# ==========================================
+# 3. EMBEDDED HTML PARSER & DATA EXTRACTOR
+# ==========================================
 def parse_html_to_dataframe(html_content):
   soup = BeautifulSoup(html_content, "html.parser")
   extracted_rows = []
@@ -156,54 +371,194 @@ def parse_html_to_dataframe(html_content):
 
 
 # ==========================================
-# 3. AUTOMATED DATA LOADER FROM data.html
+# 4. INITIALIZE DATA & INTERACTIVE CAPTCHA
 # ==========================================
-if os.path.exists("data.html"):
-  with open("data.html", "r", encoding="utf-8") as f:
-    raw_df = parse_html_to_dataframe(f.read())
+
+if "live_html_data" not in st.session_state:
+    st.session_state.live_html_data = None
+if "waiting_for_captcha" not in st.session_state:
+    st.session_state.waiting_for_captcha = False
+if "live_driver" not in st.session_state:
+    st.session_state.live_driver = None
+if "captcha_img_bytes" not in st.session_state:
+    st.session_state.captcha_img_bytes = None
+
+st.sidebar.header("🌐 Auto-Fetch & Update data.html")
+
+# --- PHASE 1 ---
+if not st.session_state.waiting_for_captcha:
+    st.session_state.portal_user = st.sidebar.text_input("Portal Username", placeholder="Student ID")
+    st.session_state.portal_pass = st.sidebar.text_input("Portal Password", type="password", placeholder="Password")
+    
+    if st.sidebar.button("1. Connect & Get CAPTCHA", use_container_width=True):
+        if not st.session_state.portal_user or not st.session_state.portal_pass:
+            st.sidebar.error("Please enter credentials first.")
+        else:
+            if os.path.exists("error_screenshot.png"):
+                os.remove("error_screenshot.png")
+                
+            with st.spinner("Connecting to server and retrieving CAPTCHA..."):
+                try:
+                    init_browser_and_get_captcha()
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Error: {e}")
+
+# --- PHASE 2 ---
 else:
-  st.error(
-      "File 'data.html' not found. Please make sure it is uploaded in your"
-      " repository."
-  )
-  st.stop()
+    st.sidebar.success("Connection Established!")
+    st.sidebar.image(st.session_state.captcha_img_bytes, caption="Enter the 5 digits shown above")
+    
+    user_captcha = st.sidebar.text_input("CAPTCHA Value", max_chars=5)
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("2. Submit & Sync", use_container_width=True):
+            if len(user_captcha) != 5:
+                st.sidebar.error("Please enter exactly 5 digits.")
+            else:
+                with st.spinner("Scraping table and extracting <tbody>... (takes ~25s)"):
+                    try:
+                        raw_live_html = submit_captcha_and_scrape(
+                            st.session_state.portal_user, 
+                            st.session_state.portal_pass, 
+                            user_captcha
+                        )
+                        st.session_state.live_html_data = raw_live_html
+                        
+                        with open("data.html", "w", encoding="utf-8") as f:
+                            f.write(raw_live_html)
+                            
+                        if "GITHUB_TOKEN" in st.secrets and "GITHUB_REPO" in st.secrets:
+                            try:
+                                g = Github(st.secrets["GITHUB_TOKEN"])
+                                repo = g.get_repo(st.secrets["GITHUB_REPO"])
+                                try:
+                                    contents = repo.get_contents("data.html")
+                                    repo.update_file(
+                                        contents.path, 
+                                        "Bot automatically synced trimmed <tbody>", 
+                                        raw_live_html, 
+                                        contents.sha
+                                    )
+                                except Exception:
+                                    repo.create_file(
+                                        "data.html", 
+                                        "Bot created trimmed <tbody> data file", 
+                                        raw_live_html
+                                    )
+                                st.sidebar.success("✅ Synced and pushed to GitHub permanently!")
+                            except Exception as github_e:
+                                st.sidebar.warning(f"Saved locally, but GitHub push failed: {github_e}")
+                        else:
+                            st.sidebar.success("✅ Saved locally (GitHub secrets not configured).")
+                        
+                        if os.path.exists("error_screenshot.png"):
+                            os.remove("error_screenshot.png")
+                            
+                        st.rerun() # Refresh only on success
+                            
+                    except Exception as e:
+                        # FIX: We now stop the app instead of rerunning so you can READ the error!
+                        st.sidebar.error(f"Sync failed: {e}")
+                        
+                        if st.session_state.live_driver:
+                            st.session_state.live_driver.quit()
+                            st.session_state.live_driver = None
+                        st.session_state.waiting_for_captcha = False
+                        st.stop() # Do not wipe the screen!
+
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            if st.session_state.live_driver:
+                st.session_state.live_driver.quit()
+                st.session_state.live_driver = None
+            st.session_state.waiting_for_captcha = False
+            st.rerun()
+
+st.sidebar.markdown("---")
+
+raw_df = pd.DataFrame() 
+if st.session_state.live_html_data:
+    raw_df = parse_html_to_dataframe(st.session_state.live_html_data)
+elif os.path.exists("data.html"):
+    with open("data.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+        if html_content.strip():
+            raw_df = parse_html_to_dataframe(html_content)
+
+if raw_df is None or raw_df.empty:
+    if st.session_state.waiting_for_captcha:
+        st.info("👈 Please open the sidebar menu (top left) to enter your CAPTCHA and complete the sync!")
+    else:
+        st.error("⚠️ No schedule data found. Please open the sidebar and run 'Connect & Get CAPTCHA' to fetch fresh data.")
+        if os.path.exists("error_screenshot.png"):
+            st.image("error_screenshot.png", caption="Bot's view during the last failed attempt:")
+    st.stop()
+
+
+# ==========================================
+# EXPORT SCRAPED SHUBA/ID DATA (EXCEL)
+# ==========================================
+st.sidebar.subheader("📥 Export Raw Data")
+
+try:
+    current_time_str = datetime.now().strftime("%d%m%Y-%H%M")
+    excel_filename = f"Scraped_Shuba_Data_{current_time_str}.xlsx"
+    
+    raw_excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(raw_excel_buffer, engine='openpyxl') as writer:
+        raw_df.to_excel(writer, index=False, sheet_name="Scraped_Data")
+    
+    st.sidebar.download_button(
+        label="Download All Scraped Data (Excel)",
+        data=raw_excel_buffer.getvalue(),
+        file_name=excel_filename,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+except ModuleNotFoundError:
+    st.sidebar.error("⚠️ Add 'openpyxl' to requirements.txt to enable Excel downloads.")
 
 
 @st.cache_data
 def parse_schedule_blocks(df_input):
-  parsed_rows = []
-  for index, row in df_input.iterrows():
-    venue_str = str(row["VENUE"]).strip()
-    if venue_str == "nan" or not venue_str:
-      continue
-
-    blocks = [b.strip() for b in venue_str.split(",")]
-    for block in blocks:
-      if "-" in block:
-        parts = block.split("-")
-        try:
-          day = int(parts[0].strip())
-          start_time = int(parts[1].strip())
-          new_row = row.copy()
-          new_row["day"] = day
-          new_row["start_time"] = start_time
-          new_row["end_time"] = start_time + 1
-          parsed_rows.append(new_row)
-        except ValueError:
-          continue
-  return pd.DataFrame(parsed_rows)
-
+    parsed_rows = []
+    for index, row in df_input.iterrows():
+        venue_str = str(row["VENUE"]).strip()
+        if venue_str == "nan" or not venue_str:
+            continue
+    
+        blocks = [b.strip() for b in venue_str.split(",")]
+        for block in blocks:
+            if "-" in block:
+                parts = block.split("-")
+                try:
+                    day = int(parts[0].strip())
+                    start_time = int(parts[1].strip())
+                    new_row = row.copy()
+                    new_row["day"] = day
+                    new_row["start_time"] = start_time
+                    new_row["end_time"] = start_time + 1
+                    parsed_rows.append(new_row)
+                except ValueError:
+                    continue
+    return pd.DataFrame(parsed_rows)
 
 parsed_df = parse_schedule_blocks(raw_df)
 
+if parsed_df.empty:
+    st.error("⚠️ The scraped data contains no valid schedule blocks. The university portal might be empty.")
+    st.stop()
+
+
 # ==========================================
-# 4. DYNAMIC SIDEBAR FILTERS (SUN - THU)
+# 5. PURE NATIVE STREAMLIT FILTERS (Tight UI)
 # ==========================================
-st.sidebar.header("Day & Time Matrix Filters")
-st.sidebar.caption("Check days and adjust acceptable hours (08 to 18).")
+st.sidebar.header("Filter By Day & Time")
 
 days_config = {
-    1: ("Sunday (Day 1)", False),
+    1: ("Sunday (Day 1)", True),
     2: ("Monday (Day 2)", True),
     3: ("Tuesday (Day 3)", True),
     4: ("Wednesday (Day 4)", True),
@@ -211,22 +566,75 @@ days_config = {
 }
 
 day_filters = {}
-for day_num, (label, default_val) in days_config.items():
-  is_on = st.sidebar.checkbox(label, value=default_val)
-  time_range = (
-      st.sidebar.slider(f"{label} Hours", 8, 18, (8, 18)) if is_on else (0, 0)
-  )
-  day_filters[day_num] = {"on": is_on, "range": time_range}
+day_exceptions = {}
 
+for day_num, (label, default_val) in days_config.items():
+  # Create a visual card container
+  with st.sidebar.container(border=True):
+    # Checkbox
+    is_on = st.checkbox(label, value=default_val, key=f"chk_{day_num}")
+
+    # Time Slider and Exception Logic
+    if is_on:
+      # Enabled Slider - format="%02d" keeps the 09, 16 formatting
+      time_range = st.slider(
+          "Hours", 8, 18, (8, 18), 
+          format="%02d",
+          key=f"slide_{day_num}", 
+          label_visibility="collapsed"
+      )
+      
+      ex_list = []
+      # Exception Dock (Permanently Expanded, cleaner placeholder)
+      exception_str = st.text_input(
+          "Exceptions", 
+          value="",
+          placeholder="Enter Excepted Hours", 
+          key=f"txt_{day_num}", 
+          label_visibility="collapsed"
+      )
+      
+      if exception_str.strip():
+        try:
+          ex_list = [int(x.strip()) for x in exception_str.split(",") if x.strip().isdigit()]
+        except ValueError:
+          pass
+
+      day_filters[day_num] = {"range": time_range}
+      day_exceptions[day_num] = ex_list
+
+    else:
+      # Disabled Slider
+      st.slider(
+          "Hours", 8, 18, (8, 18), 
+          format="%02d",
+          disabled=True, 
+          key=f"slide_dis_{day_num}", 
+          label_visibility="collapsed"
+      )
+      
+      # Disabled Exception Dock
+      st.text_input(
+          "Exceptions", 
+          value="",
+          placeholder="Enter Excepted Hours", 
+          key=f"txt_dis_{day_num}", 
+          label_visibility="collapsed",
+          disabled=True
+      )
+      
+      day_filters[day_num] = None
+      day_exceptions[day_num] = []
 
 def is_valid_time(row):
-  day, start, end = row["day"], row["start_time"], row["end_time"]
+  day, start = row["day"], row["start_time"]
   config = day_filters.get(day)
-  if config and config["on"]:
+  if config is not None:
     r_start, r_end = config["range"]
-    return r_start <= start and end <= r_end
+    if r_start <= start <= r_end:
+      if start not in day_exceptions.get(day, []):
+        return True
   return False
-
 
 parsed_df["is_valid"] = parsed_df.apply(is_valid_time, axis=1)
 invalid_ids = parsed_df[parsed_df["is_valid"] == False]["ID"].unique()
@@ -234,17 +642,84 @@ valid_blocks_df = parsed_df[~parsed_df["ID"].isin(invalid_ids)]
 
 # --- Section Availability Filter ---
 st.sidebar.markdown("---")
-st.sidebar.header("Section Availability")
+st.sidebar.header("Section Availability & Enrollment")
+
 if "STATUS" in raw_df.columns:
-  auto_remove = st.sidebar.checkbox("Auto-Remove Closed Sections", value=True)
-  if auto_remove:
-    closed_mask = valid_blocks_df["STATUS"].astype(str).str.contains(
-        "مغلقة", na=False
+    # 1. Draw the Checkbox FIRST
+    auto_remove = st.sidebar.checkbox("Avoid Closed Sections", value=True)
+    
+    # 2. Draw the Text Input SECOND
+    enrolled_input = st.sidebar.text_input(
+        "Enrolled IDs", 
+        placeholder="Enter Already Enrolled Section",
+        help="These sections will bypass the 'Closed' filter so you can still build a schedule around them.",
+        label_visibility="collapsed" 
     )
-    valid_blocks_df = valid_blocks_df[~closed_mask]
+    enrolled_ids = [s.strip() for s in enrolled_input.split(",") if s.strip()]
+
+    # 3. Apply the filtering logic based on the inputs above
+    if auto_remove:
+        # Find which sections are marked as closed
+        closed_mask = valid_blocks_df["STATUS"].astype(str).str.contains("مغلقة", na=False)
+        
+        # Find which sections match your enrolled IDs
+        is_enrolled_mask = valid_blocks_df["ID"].astype(str).isin(enrolled_ids)
+        
+        # Keep the section if it is NOT closed, OR if it is in your enrolled list
+        valid_blocks_df = valid_blocks_df[~closed_mask | is_enrolled_mask]
+
 
 # ==========================================
-# 5. SUBJECT-SPECIFIC TEACHER RULES
+# 6. GLOBAL HALL & SHUBA RULES (REQUIRE / BAN)
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.header("Global Hall & Shuba Rules")
+
+all_halls = sorted(
+    [str(h) for h in raw_df["HALL"].dropna().astype(str).unique() if h.strip()]
+)
+all_shubas = sorted(
+    [str(s) for s in raw_df["ID"].dropna().astype(str).unique() if s.strip()]
+)
+
+banned_halls = st.sidebar.multiselect(
+    "Ban Halls", options=all_halls, key="global_ban_halls"
+)
+remaining_halls = [h for h in all_halls if h not in banned_halls]
+required_halls = st.sidebar.multiselect(
+    "Require Halls", options=remaining_halls, key="global_req_halls"
+)
+
+banned_shubas = st.sidebar.multiselect(
+    "Ban Shubas (IDs)", options=all_shubas, key="global_ban_shubas"
+)
+remaining_shubas = [s for s in all_shubas if s not in banned_shubas]
+required_shubas = st.sidebar.multiselect(
+    "Require Shubas (IDs)", options=remaining_shubas, key="global_req_shubas"
+)
+
+# Apply Hall filters
+if banned_halls:
+  valid_blocks_df = valid_blocks_df[
+      ~valid_blocks_df["HALL"].astype(str).isin(banned_halls)
+  ]
+if required_halls:
+  valid_blocks_df = valid_blocks_df[
+      valid_blocks_df["HALL"].astype(str).isin(required_halls)
+  ]
+
+# Apply Shuba filters
+if banned_shubas:
+  valid_blocks_df = valid_blocks_df[
+      ~valid_blocks_df["ID"].astype(str).isin(banned_shubas)
+  ]
+if required_shubas:
+  valid_blocks_df = valid_blocks_df[
+      valid_blocks_df["ID"].astype(str).isin(required_shubas)
+  ]
+
+# ==========================================
+# 7. SUBJECT-SPECIFIC TEACHER RULES
 # ==========================================
 st.sidebar.markdown("---")
 st.sidebar.header("Subject-Specific Teacher Rules")
@@ -289,7 +764,7 @@ for subj, rules in subject_rules.items():
     ]
 
 # ==========================================
-# 6. DATA GROUPING & SOLVER
+# 8. DATA GROUPING & SOLVER
 # ==========================================
 sections_by_subject = {}
 for code, group in valid_blocks_df.groupby("CODE"):
@@ -349,6 +824,7 @@ def generate_schedules(subjects_dict, targets):
   backtrack(0, [], set())
   return valid_schedules
 
+
 schedules = (
     generate_schedules(sections_by_subject, target_subjects)
     if target_subjects
@@ -376,15 +852,13 @@ def calculate_schedule_score(schedule):
 schedules = sorted(schedules, key=calculate_schedule_score)
 
 # ==========================================
-# 7. IMAGE GENERATOR & UI RENDERING
+# 9. IMAGE GENERATOR & UI RENDERING
 # ==========================================
-
 
 def fix_arabic(text):
   if not text.strip():
     return ""
   return get_display(arabic_reshaper.reshape(str(text)))
-
 
 def draw_schedule_image(schedule):
   fig, ax = plt.subplots(figsize=(10, 6))
@@ -569,7 +1043,7 @@ else:
     st.markdown(html_grid, unsafe_allow_html=True)
 
   else:
-    table_data = [{
+    df_excel = pd.DataFrame([{
         "CODE": s["code"],
         "NAME": s["name"],
         "ID (ش)": s["id"],
@@ -577,28 +1051,84 @@ else:
         "VENUE": s["venue"],
         "TEACHER": s["teacher"],
         "STATUS": s["status"],
-    } for s in active_sched]
+    } for s in active_sched])
 
-    st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+    st.dataframe(df_excel, use_container_width=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    try:
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_excel.to_excel(writer, index=False, sheet_name="Schedule")
+        
+        st.download_button(
+            label="📥 Download Current Schedule (Excel)",
+            data=excel_buffer.getvalue(),
+            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+    except ModuleNotFoundError:
+        st.error("Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
+        csv_data = df_excel.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Current Schedule (CSV Backup)",
+            data=csv_data,
+            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
   st.markdown("---")
   st.markdown('<div class="center-download">', unsafe_allow_html=True)
-  if st.button(
-      "Render & Download All Schedules as JPGs (ZIP)", key="download_zip_btn"
-  ):
-    with st.spinner("Drawing high-res images..."):
-      zip_buffer = io.BytesIO()
-      with zipfile.ZipFile(
-          zip_buffer, "a", zipfile.ZIP_DEFLATED, False
-      ) as zip_file:
-        for i, sched in enumerate(schedules):
-          img_bytes = draw_schedule_image(sched)
-          zip_file.writestr(f"Schedule_Option_{i+1}.jpg", img_bytes)
+  
+  col_zip, col_excel = st.columns(2)
+  
+  # --- 1. ZIP JPG DOWNLOAD ---
+  with col_zip:
+      if st.button("Render All as JPGs (ZIP)", key="download_zip_btn", use_container_width=True):
+        with st.spinner("Drawing high-res images..."):
+          zip_buffer = io.BytesIO()
+          with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            for i, sched in enumerate(schedules):
+              img_bytes = draw_schedule_image(sched)
+              zip_file.writestr(f"Schedule_Option_{i+1}.jpg", img_bytes)
+    
+          st.download_button(
+              label="📥 Click Here to Download ZIP",
+              data=zip_buffer.getvalue(),
+              file_name="All_Schedules.zip",
+              mime="application/zip",
+              use_container_width=True
+          )
+          
+  # --- 2. ALL SCHEDULES EXCEL DOWNLOAD ---
+  with col_excel:
+      try:
+          import openpyxl
+          all_excel_buffer = io.BytesIO()
+          with pd.ExcelWriter(all_excel_buffer, engine='openpyxl') as writer:
+              for i, sched in enumerate(schedules):
+                  df_sched = pd.DataFrame([{
+                      "CODE": s["code"],
+                      "NAME": s["name"],
+                      "ID (ش)": s["id"],
+                      "HALL": s["hall"],
+                      "VENUE": s["venue"],
+                      "TEACHER": s["teacher"],
+                      "STATUS": s["status"],
+                  } for s in sched])
+                  # Put each schedule on its own sheet in the Excel file
+                  df_sched.to_excel(writer, index=False, sheet_name=f"Option_{i+1}")
+          
+          st.download_button(
+              label="📥 Download All Schedules (1 Excel File)",
+              data=all_excel_buffer.getvalue(),
+              file_name="All_Generated_Schedules.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True
+          )
+      except ModuleNotFoundError:
+          st.error("⚠️ Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
 
-      st.download_button(
-          label="Click Here to Download ZIP",
-          data=zip_buffer.getvalue(),
-          file_name="All_Schedules.zip",
-          mime="application/zip",
-      )
   st.markdown("</div>", unsafe_allow_html=True)
