@@ -384,6 +384,25 @@ st.markdown(
             padding-bottom: 16px !important;
             line-height: 1.3 !important;
         }}
+
+        /* FIX SPINNER ALIGNMENT */
+        [data-testid="stSpinner"] {{
+            align-items: center !important;
+            margin-top: 10px !important;
+        }}
+        
+        [data-testid="stSpinner"] div[data-testid="stMarkdownContainer"] {{
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+        }}
+        
+        [data-testid="stSpinner"] p {{
+            margin: 0 !important;
+            padding: 0 !important;
+        }}
+        
     </style>
     """,
     unsafe_allow_html=True
@@ -634,7 +653,7 @@ with st.sidebar.container(border=True):
             if os.path.exists("error_screenshot.png"):
                 os.remove("error_screenshot.png")
                 
-            with st.spinner("Connecting to University Portal"):
+            with st.spinner("Connecting to sso.iu.edu.sa"):
                 try:
                     init_browser_and_get_captcha()
                     st.rerun()
@@ -694,7 +713,7 @@ with st.sidebar.container(border=True):
             elif not user_captcha or len(user_captcha) != 5:
                 st.error("Please enter exactly 5 digits for the CAPTCHA.")
             else:
-                with st.spinner("Fetching Data From Portal (takes ~25s)"):
+                with st.spinner("Fetching Data From Portal"):
                     try:
                         st.session_state.portal_user = portal_user
                         st.session_state.portal_pass = portal_pass
@@ -822,13 +841,13 @@ if parsed_df.empty:
 # ==========================================
 # 9. PURE NATIVE STREAMLIT FILTERS (Tight UI)
 # ==========================================
-with st.sidebar.expander("⏳ Filter By Day & Time", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Day & Time", expanded=False):
     days_config = {
-        1: ("Sunday (Day 1)", True),
-        2: ("Monday (Day 2)", True),
-        3: ("Tuesday (Day 3)", True),
-        4: ("Wednesday (Day 4)", True),
-        5: ("Thursday (Day 5)", True),
+        1: ("1 Sunday", True),
+        2: ("2 Monday", True),
+        3: ("3 Tuesday", True),
+        4: ("4 Wednesday", True),
+        5: ("5 Thursday", True),
     }
 
     day_filters = {}
@@ -840,7 +859,7 @@ with st.sidebar.expander("⏳ Filter By Day & Time", expanded=False):
 
             if is_on:
                 time_range = st.slider(
-                    "Hours", 8, 18, (8, 18), 
+                    "Hours", 8, 17, (8, 12), 
                     format="%02d",
                     key=f"slide_{day_num}", 
                     label_visibility="collapsed"
@@ -866,7 +885,7 @@ with st.sidebar.expander("⏳ Filter By Day & Time", expanded=False):
 
             else:
                 st.slider(
-                    "Hours", 8, 18, (8, 18), 
+                    "Hours", 8, 17, (8, 12), 
                     format="%02d",
                     disabled=True, 
                     key=f"slide_dis_{day_num}", 
@@ -899,11 +918,10 @@ parsed_df["is_valid"] = parsed_df.apply(is_valid_time, axis=1)
 invalid_ids = parsed_df[parsed_df["is_valid"] == False]["ID"].unique()
 valid_blocks_df = parsed_df[~parsed_df["ID"].isin(invalid_ids)]
 
-
 # ==========================================
 # 9B. ENROLLMENT & AVAILABILITY OVERRIDES
 # ==========================================
-with st.sidebar.expander("🛡️ Section Availability", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Availability", expanded=False):
     enrolled_ids_str = st.session_state.get("auto_enrolled", "")
     enrolled_ids = [s.strip() for s in enrolled_ids_str.split(",") if s.strip()]
 
@@ -918,23 +936,41 @@ with st.sidebar.expander("🛡️ Section Availability", expanded=False):
                         enrolled_ids.append(sh)
 
     if "STATUS" in raw_df.columns:
-        auto_remove = st.checkbox("Remove Closed Sections", value=True)
-        protect_enrolled = st.checkbox("Mark enrolled sections as opened", value=True)
+        show_opened = st.checkbox("Opened", value=True)
+        show_enrolled = st.checkbox("Enrolled", value=True)
+        show_closed = st.checkbox("Closed", value=False)
         
-        if auto_remove:
-            closed_mask = valid_blocks_df["STATUS"].astype(str).str.contains("مغلقة", na=False)
+        # Filter logic based on the 3 checkboxes
+        closed_mask = valid_blocks_df["STATUS"].astype(str).str.contains("مغلقة", na=False)
+        is_enrolled_mask = valid_blocks_df["ID"].astype(str).isin(enrolled_ids) if enrolled_ids else pd.Series(False, index=valid_blocks_df.index)
+
+        allowed_masks = []
+        
+        if show_opened:
+            # Opened sections are those that are NOT closed and NOT enrolled (or just normal open sections)
+            allowed_masks.append(~closed_mask & ~is_enrolled_mask)
             
-            if protect_enrolled and enrolled_ids:
-                is_enrolled_mask = valid_blocks_df["ID"].astype(str).isin(enrolled_ids)
-                valid_blocks_df = valid_blocks_df[~closed_mask | is_enrolled_mask]
-            else:
-                valid_blocks_df = valid_blocks_df[~closed_mask]
+        if show_enrolled:
+            # Enrolled sections bypass closeness checks completely
+            allowed_masks.append(is_enrolled_mask)
+            
+        if show_closed:
+            # Closed sections that are not already handled under enrolled
+            allowed_masks.append(closed_mask & ~is_enrolled_mask)
+
+        if allowed_masks:
+            final_mask = allowed_masks[0]
+            for m in allowed_masks[1:]:
+                final_mask = final_mask | m
+            valid_blocks_df = valid_blocks_df[final_mask]
+        else:
+            valid_blocks_df = valid_blocks_df.iloc[0:0] # Clear all if everything is unchecked
 
 
 # ==========================================
 # 10. GLOBAL HALL & SHUBA RULES (REQUIRE / BAN)
 # ==========================================
-with st.sidebar.expander("🌍 Global Hall & Shuba Rules", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Hall & IDs", expanded=False):
     all_halls = sorted(
         [str(h) for h in raw_df["HALL"].dropna().astype(str).unique() if h.strip()]
     )
@@ -979,7 +1015,7 @@ if required_shubas:
 # ==========================================
 # 11. SUBJECT-SPECIFIC TEACHER RULES
 # ==========================================
-with st.sidebar.expander("🛞 Specific Teachers Rules", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Teacher", expanded=False):
     
     all_subjects = sorted([str(c) for c in raw_df["CODE"].astype(str).unique()])
     subject_rules = {}
