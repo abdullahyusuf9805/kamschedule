@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from bs4 import BeautifulSoup
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 from PIL import Image, ImageOps
 
@@ -32,102 +33,136 @@ from selenium.webdriver.chrome.service import Service
 st.set_page_config(page_title="Dynamic Timetable Solver", layout="wide")
 
 st.markdown(
-    """
-    <style>
-        .stCaption {display: none;}
-        
-        /* 4-Color Theme: Black, Dark Gray, Light Gray, White */
-        .stApp {
-            background-color: #000000;
-            color: #ffffff;
-        }
+"""
+<style>
+    /* Hide Streamlit elements */
+    .stCaption {display: none;}
+    [data-testid="stTickBar"], [data-testid="stTickBarMin"], [data-testid="stTickBarMax"], 
+    div[data-baseweb="tooltip"], div[role="tooltip"], div[data-testid="stThumbValue"] {
+        display: none !important; opacity: 0 !important; visibility: hidden !important;
+    }
 
-        h1 {
-            font-size: clamp(1.2rem, 2.5vw, 2.2rem) !important;
-            white-space: nowrap !important;
-            color: #ffffff !important;
-        }
+    /* Base theme */
+    .stApp { background-color: #000000; color: #ffffff; }
+    div.block-container { padding: 3.5rem 1.5rem 1.5rem 1.5rem !important; }
+    [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: 0.3rem !important; }
 
-        .nav-row {
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            width: 100%;
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-        .nav-row > div:nth-child(1),
-        .nav-row > div:nth-child(3) {
-            flex: 0 0 50px !important;
-        }
-        .nav-row > div:nth-child(2) {
-            flex: 1 1 auto !important;
-        }
+    /* =========================================
+       1,000,000% EXACT HTML PAGINATOR
+       ========================================= */
 
-        .center-download {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            margin-top: 20px;
-            text-align: center;
-        }
-        
-        /* UI TIGHTENING CSS (Squish Elements in Card) */
-        [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
-            padding: 0.2rem 0.8rem 0.5rem 0.8rem !important;
-            background-color: #000000 !important;
-            border-radius: 8px !important;
-            border: 1px solid #2a2a2a !important;
-            margin-bottom: 12px !important;
-        }
+    #my-paginator { display: none !important; }
 
-        [data-testid="stSidebar"] div[data-testid="stTextInput"] {
-            border: 1px solid #777777 !important; 
-            border-radius: 6px !important;
-            background-color: #000000 !important;
-            overflow: hidden !important; 
-            margin-bottom: 0px !important; 
-        }
-        
-        /* NUCLEAR CSS: DESTROY TOOLTIPS & TICK BARS */
-        [data-testid="stTickBar"], 
-        [data-testid="stTickBarMin"], 
-        [data-testid="stTickBarMax"] {
-            display: none !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-        }
+    /* 1. Main Black Wrapper Container */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] {
+        background-color: #000000 !important;
+        padding: 12px 16px !important;
+        border-top: 1px solid #1a1a1a !important;
+        border-bottom: 1px solid #1a1a1a !important;
+        align-items: center !important;
+    }
 
-        div[data-baseweb="tooltip"], 
-        div[role="tooltip"],
-        div[data-testid="stThumbValue"] {
-            display: none !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-        }
+    /* 2. Scrollable Row */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) > div > div[data-testid="stVerticalBlock"] {
+        display: flex !important;
+        flex-direction: row !important; 
+        overflow-x: auto !important;
+        scroll-behavior: smooth !important;
+        gap: 8px !important;
+        padding: 4px 0 !important;
+        flex-wrap: nowrap !important;
+        -ms-overflow-style: none !important;
+        scrollbar-width: none !important;
+    }
+    
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) > div > div[data-testid="stVerticalBlock"]::-webkit-scrollbar {
+        display: none !important;
+    }
 
-        div[data-baseweb="slider"] div[role="slider"] {
-            background-color: #ff4d4d !important;
-            border: none !important;
-            box-shadow: none !important;
-            outline: none !important;
-        }
-        
-        div[data-baseweb="slider"][aria-disabled="true"] div[role="slider"] {
-            background-color: #555555 !important;
-        }
+    /* 3. ANTI-SQUISH: Lock each button's parent container to EXACTLY 44px */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) > div > div[data-testid="stVerticalBlock"] > div.element-container {
+        flex: 0 0 44px !important; 
+        width: 44px !important;
+        min-width: 44px !important;
+        max-width: 44px !important;
+        display: block !important;
+    }
 
-        [data-testid="stHorizontalBlock"] {
-            align-items: center !important;
-        }
-    </style>
+    /* 4. The Option Button Square (KILL STREAMLIT'S FLEXBOX) */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button {
+        background-color: #1f1f1f !important;
+        border: 1px solid #333333 !important;
+        border-radius: 6px !important;
+        width: 44px !important;
+        height: 44px !important;
+        min-width: 44px !important;
+        max-width: 44px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important; /* <--- REMOVES FLEXBOX SQUISH */
+        text-align: center !important;
+        box-shadow: none !important;
+        transition: all 0.2s ease !important;
+    }
+
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button:hover {
+        background-color: #2a2a2a !important;
+        border-color: #555555 !important;
+    }
+
+    /* 5. THE TEXT FIX: Old-School Block Centering */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button > div,
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button p {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 42px !important; /* Centers text vertically exactly inside the 44px box */
+        color: #e0e0e0 !important;
+        font-size: 14px !important;
+        font-weight: 400 !important;
+        font-variant-numeric: tabular-nums !important;
+        white-space: nowrap !important; /* FORBIDS STACKING */
+        word-break: keep-all !important;
+        letter-spacing: 0px !important;
+    }
+
+    /* 6. Active State (Vibrant Green) */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button[kind="primary"] {
+        border: 2px solid #75d466 !important;
+        background-color: #1a2218 !important;
+    }
+    
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button[kind="primary"] p {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+
+    /* 7. Navigation Arrows */
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1) button,
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) button {
+        background-color: transparent !important;
+        border: none !important;
+        color: #6b6b6b !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        display: block !important;
+        line-height: 42px !important; /* Perfectly align arrows with the text */
+        text-align: center !important;
+    }
+    
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1) button:hover,
+    div.element-container:has(#my-paginator) + div.element-container > div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) button:hover {
+        opacity: 0.7 !important;
+        background-color: transparent !important;
+    }
+</style>    
 """,
     unsafe_allow_html=True,
 )
 
-st.title("Dynamic Timetable Generator")
+st.title("DYNAMIC TIMETABLE GENERATOR")
 
 # ==========================================
 # 2. INITIALIZE SESSION STATES
@@ -156,8 +191,8 @@ updated_str = time_match.group(1) if time_match else "No data file found"
 
 # Display Last Update on the Main Page
 st.markdown(
-    f"<p style='color: #a0a0a0; font-size: 15px; margin-top: -15px; margin-bottom: 25px;'>"
-    f"<b>Last Update:</b> {updated_str}"
+    f"<p style='color: #a0a0a0; font-size: 15px; margin-top: -5px; margin-bottom: 10px;'>"
+    f"<b>LAST UPDATE:</b> {updated_str}"
     f"</p>",
     unsafe_allow_html=True,
 )
@@ -1114,7 +1149,7 @@ target_subjects = list(sections_by_subject.keys())
 total_required_subjects = len(all_subjects)
 
 if len(target_subjects) < total_required_subjects:
-    st.error("No Valid Schedule found.")
+    st.error("No Valid Schedule Found.")
     st.stop()
 
 @st.cache_data
@@ -1122,7 +1157,7 @@ def generate_schedules(subjects_dict, targets):
     valid_schedules = []
 
     def backtrack(idx, current_schedule, occupied_slots):
-        if len(valid_schedules) >= 50:
+        if len(valid_schedules) >= 100:
             return
         if idx == len(targets):
             valid_schedules.append(list(current_schedule))
@@ -1237,175 +1272,205 @@ def draw_schedule_image(schedule):
     return buf.getvalue()
 
 
-if not schedules:
-    st.warning("No valid non-overlapping schedules found with these filters.")
-else:
-    st.info(
-        f"Found {len(schedules)} valid schedules (Ranked by least gaps)."
-    )
 
+if not schedules:
+    st.warning("No Valid Schedule Found.")
+else:
     if "sched_idx" not in st.session_state:
         st.session_state.sched_idx = 0
-    if "active_view" not in st.session_state:
-        st.session_state.active_view = "Visual View"
 
     if st.session_state.sched_idx >= len(schedules):
         st.session_state.sched_idx = 0
 
-    st.markdown('<div class="nav-row">', unsafe_allow_html=True)
-    c_prev, c_sel, c_next = st.columns([1, 8, 1])
+    # --------------------------------------------------------------------------------
+    # UNIFORM HEIGHT & SPACING CSS NORMALIZATION
+    # --------------------------------------------------------------------------------
+    st.markdown("""
+        <style>
+            .stSelectbox > div > div {
+                min-height: 48px !important;
+                max-height: 48px !important;
+                height: 48px !important;
+                display: flex !important;
+                align-items: center !important;
+                box-sizing: border-box !important;
+                margin-bottom: 12px !important;
+            }
 
-    with c_prev:
-        if st.button("◀", key="prev_btn", use_container_width=True):
-            if st.session_state.sched_idx > 0:
-                st.session_state.sched_idx -= 1
-            else:
-                st.session_state.sched_idx = len(schedules) - 1
-            st.rerun()
+            .stSelectbox div[data-baseweb="select"] > div {
+                min-height: 48px !important;
+                height: 48px !important;
+                display: flex !important;
+                align-items: center !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    with c_sel:
-        selected_idx = st.selectbox(
-            "Browse Schedule Options:",
-            range(len(schedules)),
-            index=st.session_state.sched_idx,
-            format_func=lambda x: (
-                f"Option #{x + 1} (Best Fit)" if x == 0 else f"Option #{x + 1}"
-            ),
-            label_visibility="collapsed",
-        )
-        if selected_idx != st.session_state.sched_idx:
-            st.session_state.sched_idx = selected_idx
-            st.rerun()
-
-    with c_next:
-        if st.button("▶", key="next_btn", use_container_width=True):
-            if st.session_state.sched_idx < len(schedules) - 1:
-                st.session_state.sched_idx += 1
-            else:
-                st.session_state.sched_idx = 0
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    total_count = len(schedules)
+    options_list = [f"Schedule {i+1:03d} of {total_count}" for i in range(total_count)]
+    
+    selected_option = st.selectbox(
+        "Select Schedule",
+        options=options_list,
+        index=st.session_state.sched_idx,
+        label_visibility="collapsed",
+        key="sched_selectbox"
+    )
+    
+    new_idx = options_list.index(selected_option)
+    if new_idx != st.session_state.sched_idx:
+        st.session_state.sched_idx = new_idx
+        st.rerun()
 
     active_sched = schedules[st.session_state.sched_idx]
 
-    is_visual = st.session_state.active_view == "Visual View"
-    v_bg = "#000000" if is_visual else "#212121"
-    v_border = "#ffffff" if is_visual else "#424242"
+    # --- 1. VISUAL VIEW TABLE (RENDERED FIRST) ---
+    # --- 1. VISUAL VIEW TABLE (RENDERED FIRST) ---
+    st.subheader("A. Visual View")
+    html_grid = "<table dir='rtl' style='width:100%; text-align:center; border-collapse: collapse; font-family: sans-serif; background-color: #121212; color: #ffffff;'>"
+    html_grid += "<tr style='background-color: #212121; color: #ffffff;'>"
+    html_grid += "<th style='border: 1px solid #333333; padding: 8px;'>الوقت</th><th style='border: 1px solid #333333; padding: 8px;'>الأحد</th><th style='border: 1px solid #333333; padding: 8px;'>الاثنين</th><th style='border: 1px solid #333333; padding: 8px;'>الثلاثاء</th><th style='border: 1px solid #333333; padding: 8px;'>الأربعاء</th><th style='border: 1px solid #333333; padding: 8px;'>الخميس</th></tr>"
 
-    is_excel = st.session_state.active_view == "Excel View"
-    e_bg = "#000000" if is_excel else "#212121"
-    e_border = "#ffffff" if is_excel else "#424242"
+    col_map_html = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
 
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button(
-            "Visual View", use_container_width=True, key="btn_visual_toggle"
-        ):
-            st.session_state.active_view = "Visual View"
-            st.rerun()
-    with col_btn2:
-        if st.button(
-            "Excel View", use_container_width=True, key="btn_excel_toggle"
-        ):
-            st.session_state.active_view = "Excel View"
-            st.rerun()
+    for row_idx in range(10): # Changed from 11 to 10 to remove the 18:00 row
+        hour = 8 + row_idx
+        bg_color = "#121212" if row_idx % 2 == 0 else "#000000"
+        html_grid += f"<tr style='background-color: {bg_color}; border: 1px solid #333333;'>"
+        html_grid += f"<td style='background-color: #212121; color: #ffffff; border: 1px solid #333333; padding: 8px;'><b>{hour}:00</b></td>"
 
-    st.markdown(
-        f"""
-        <style>
-            div[data-testid="column"] button[key="btn_visual_toggle"] {{
-                background-color: {v_bg} !important;
-                color: #ffffff !important;
-                border: 2px solid {v_border} !important;
-                font-weight: bold;
-            }}
-            div[data-testid="column"] button[key="btn_excel_toggle"] {{
-                background-color: {e_bg} !important;
-                color: #ffffff !important;
-                border: 2px solid {e_border} !important;
-                font-weight: bold;
-            }}
-        </style>
-    """,
-        unsafe_allow_html=True,
-    )
+        row_cells = [""] * 5
+        for section in active_sched:
+            for b in section["blocks"]:
+                if b["start_time"] == hour:
+                    c_idx = col_map_html.get(b["day"])
+                    if c_idx:
+                        raw_hall = str(section.get('hall', '')).replace("ش", "").replace("SHR", "").strip()
+                        hall_display = f"<br><small>({raw_hall})</small>" if raw_hall else ""
+                        
+                        row_cells[c_idx - 1] = (
+                            f"<b>{section['code']}</b>{hall_display}"
+                        )
 
-    if st.session_state.active_view == "Visual View":
-        html_grid = "<table dir='rtl' style='width:100%; text-align:center; border-collapse: collapse; font-family: sans-serif; background-color: #121212; color: #ffffff;'>"
-        html_grid += "<tr style='background-color: #212121; color: #ffffff;'>"
-        html_grid += "<th style='border: 1px solid #333333; padding: 8px;'>الوقت</th><th style='border: 1px solid #333333; padding: 8px;'>الأحد</th><th style='border: 1px solid #333333; padding: 8px;'>الاثنين</th><th style='border: 1px solid #333333; padding: 8px;'>الثلاثاء</th><th style='border: 1px solid #333333; padding: 8px;'>الأربعاء</th><th style='border: 1px solid #333333; padding: 8px;'>الخميس</th></tr>"
+        for c in row_cells:
+            cell_bg = "#ffffff" if c else "#212121"
+            cell_fg = "#000000" if c else "#888888"
+            html_grid += f"<td style='border: 1px solid #333333; padding: 10px; background-color: {cell_bg}; color: {cell_fg};'>{c}</td>"
+        html_grid += "</tr>"
+    html_grid += "</table>"
 
-        col_map_html = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
+    st.markdown(html_grid, unsafe_allow_html=True)
 
-        for row_idx in range(11):
-            hour = 8 + row_idx
-            bg_color = "#121212" if row_idx % 2 == 0 else "#000000"
-            html_grid += f"<tr style='background-color: {bg_color}; border: 1px solid #333333;'>"
-            html_grid += f"<td style='background-color: #212121; color: #ffffff; border: 1px solid #333333; padding: 8px;'><b>{hour}:00</b></td>"
+# --- 2. EXCEL VIEW TABLE (RENDERED BELOW) ---
+    st.subheader("B. Excel View")
+    excel_rows_html = ""
+    for s in active_sched:
+        status_val = s.get('status', 'مفتوحة')
+        teacher_val = s.get('teacher', '')
+        venue_val = s.get('venue', '')
+        hall_val = str(s.get('hall', '')).replace('ش', '').replace('SHR', '').strip()
+        id_val = s.get('id', '')
+        name_val = s.get('name', '')
+        code_val = s.get('code', '')
 
-            row_cells = [""] * 5
-            for section in active_sched:
-                for b in section["blocks"]:
-                    if b["start_time"] == hour:
-                        c_idx = col_map_html.get(b["day"])
-                        if c_idx:
-                            row_cells[c_idx - 1] = (
-                                f"<b>{section['code']}</b><br><small>(ش"
-                                f" {section['id']})</small>"
-                            )
+        excel_rows_html += "<tr>"
+        excel_rows_html += f'<td>{status_val}</td>'
+        excel_rows_html += f'<td>{teacher_val}</td>'
+        excel_rows_html += f'<td>{venue_val}</td>'
+        excel_rows_html += f'<td>{hall_val}</td>'
+        excel_rows_html += f'<td>{id_val}</td>'
+        excel_rows_html += f'<td>{name_val}</td>'
+        excel_rows_html += f'<td>{code_val}</td>'
+        excel_rows_html += "</tr>"
 
-            for c in row_cells:
-                cell_bg = "#ffffff" if c else "#212121"
-                cell_fg = "#000000" if c else "#888888"
-                html_grid += f"<td style='border: 1px solid #333333; padding: 10px; background-color: {cell_bg}; color: {cell_fg};'>{c}</td>"
-            html_grid += "</tr>"
-        html_grid += "</table>"
+    excel_table_html = f"""
+    <style>
+        .custom-excel-table {{
+            width: 100% !important;
+            border-collapse: collapse !important;
+            font-family: sans-serif !important;
+            font-size: 14px !important;
+            background-color: #121212 !important;
+            color: #ffffff !important;
+        }}
+        .custom-excel-table th, .custom-excel-table td {{
+            border: 1px solid #333333 !important;
+            padding: 12px 10px !important;
+            text-align: center !important;
+            vertical-align: middle !important;
+            border-radius: 0px !important;
+        }}
+        .custom-excel-table th {{
+            background-color: #212121 !important;
+            color: #ffffff !important;
+        }}
+    </style>
+    <div style="width: 100%; overflow-x: auto; margin-bottom: 20px;">
+        <table dir="ltr" class="custom-excel-table">
+            <thead>
+                <tr>
+                    <th>الحالة</th>
+                    <th>المحاضر</th>
+                    <th>الوقت</th>
+                    <th>رقم القاعة</th>
+                    <th>رقم الشعبة</th>
+                    <th>المقرر</th>
+                    <th>رمز المقرر</th>
+                </tr>
+            </thead>
+            <tbody>
+                {excel_rows_html}
+            </tbody>
+        </table>
+    </div>
+    """
 
-        st.markdown(html_grid, unsafe_allow_html=True)
+    st.markdown(excel_table_html, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Generate the actual excel file buffer for downloading
+    df_excel = pd.DataFrame([{
+        "رمز المقرر": s["code"],
+        "المقرر": s["name"],
+        "رقم الشعبة": s["id"],
+        "رقم القاعة": s["hall"],
+        "الوقت": s["venue"],
+        "المحاضر": s["teacher"],
+        "الحالة": s["status"],
+    } for s in active_sched])
 
-    else:
-        df_excel = pd.DataFrame([{
-            "CODE": s["code"],
-            "NAME": s["name"],
-            "ID (ش)": s["id"],
-            "HALL": s["hall"],
-            "VENUE": s["venue"],
-            "TEACHER": s["teacher"],
-            "STATUS": s["status"],
-        } for s in active_sched])
-
-        st.dataframe(df_excel, use_container_width=True)
+    try:
+        import openpyxl
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_excel.to_excel(writer, index=False, sheet_name="Schedule")
         
-        st.markdown("<br>", unsafe_allow_html=True)
-        try:
-            excel_buffer = io.BytesIO()
-            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                df_excel.to_excel(writer, index=False, sheet_name="Schedule")
-            
-            st.download_button(
-                label="📥 Download Current Schedule (Excel)",
-                data=excel_buffer.getvalue(),
-                file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        except ModuleNotFoundError:
-            st.error("Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
-            csv_data = df_excel.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Current Schedule (CSV Backup)",
-                data=csv_data,
-                file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
+        st.download_button(
+            label="📥 Download Current Schedule (Excel)",
+            data=excel_buffer.getvalue(),
+            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+    except ModuleNotFoundError:
+        st.error("Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
+        csv_data = df_excel.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Current Schedule (CSV Backup)",
+            data=csv_data,
+            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+    
     st.markdown("---")
     st.markdown('<div class="center-download">', unsafe_allow_html=True)
     
     col_zip, col_excel = st.columns(2)
     
-    # --- 1. ZIP JPG DOWNLOAD ---
+    # --- 3. ZIP JPG DOWNLOAD ---
     with col_zip:
         if st.button("Render All as JPGs (ZIP)", key="download_zip_btn", use_container_width=True):
             with st.spinner("Drawing high-res images..."):
@@ -1423,7 +1488,7 @@ else:
                     use_container_width=True
                 )
             
-    # --- 2. ALL SCHEDULES EXCEL DOWNLOAD ---
+    # --- 4. ALL SCHEDULES EXCEL DOWNLOAD ---
     with col_excel:
         try:
             import openpyxl
@@ -1452,3 +1517,4 @@ else:
             st.error("⚠️ Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
