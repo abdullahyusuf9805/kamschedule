@@ -545,8 +545,7 @@ def submit_captcha_and_scrape(username, password, captcha_val):
             driver.save_screenshot("error_screenshot.png")
             raise Exception("Could not find the main timetable <tbody>.")
             
-        final_html = f"<!-- SYNC_TIME: {time_str} -->\n" + str(target_tbody)
-        
+        final_html = f"<!-- SYNC_TIME: {time_str} -->\n<!-- STUDENT_ID: {username} -->\n" + str(target_tbody)
         return final_html, raw_enrolled_html, enrolled_str
         
     finally:
@@ -727,8 +726,11 @@ with st.sidebar.container(border=True):
                         st.session_state.auto_enrolled = auto_enrolled
                         
                         with open("data.html", "w", encoding="utf-8") as f:
+                            f.write(f"<!-- STUDENT_ID: {st.session_state.portal_user} -->\n")
                             f.write(raw_live_html)
+                            
                         with open("enrolled.html", "w", encoding="utf-8") as f:
+                            f.write(f"<!-- STUDENT_ID: {st.session_state.portal_user} -->\n")
                             f.write(raw_enrolled_html)
                             
                         if "GITHUB_TOKEN" in st.secrets and "GITHUB_REPO" in st.secrets:
@@ -786,8 +788,32 @@ if raw_df is None or raw_df.empty:
 with st.sidebar.container(border=True):
     st.markdown("### 📥 Export Raw Data")
     try:
-        current_time_str = datetime.now().strftime("%d%m%Y-%H%M")
-        excel_filename = f"Scraped_Shuba_Data_{current_time_str}.xlsx"
+        import re
+        import os
+        import pandas as pd
+        
+        # 1. Extract and format the exact sync time & ID from data.html
+        formatted_time = "UnknownTime"
+        extracted_id = "UnknownID"
+        
+        if os.path.exists("data.html"):
+            with open("data.html", "r", encoding="utf-8") as f:
+                content = f.read(500) # Increased size to catch both comments
+                
+                # Get Time
+                match_time = re.search(r'<!-- SYNC_TIME:\s*(.*?)\s*-->', content)
+                if match_time:
+                    raw_time_str = match_time.group(1)
+                    parsed_time = pd.to_datetime(raw_time_str) 
+                    formatted_time = parsed_time.strftime("%d%m%y%H%M")
+                    
+                # Get Student ID
+                match_id = re.search(r'<!-- STUDENT_ID:\s*(.*?)\s*-->', content)
+                if match_id:
+                    extracted_id = match_id.group(1).strip()
+        
+        # 2. Build the exact filename requested
+        excel_filename = f"MATROOHAT ({extracted_id}) {formatted_time}.xlsx"
         
         raw_excel_buffer = io.BytesIO()
         with pd.ExcelWriter(raw_excel_buffer, engine='openpyxl') as writer:
@@ -801,8 +827,7 @@ with st.sidebar.container(border=True):
             use_container_width=True
         )
     except ModuleNotFoundError:
-        st.error("⚠️ Add 'openpyxl' to requirements.txt to enable Excel downloads.")
-
+        st.error("Can't Export Raw Data!")
 
 # ==========================================
 # 8. PARSE VALID SCHEDULE BLOCKS
@@ -837,11 +862,20 @@ if parsed_df.empty:
     st.error("⚠️ The scraped data contains no valid schedule blocks. The university portal might be empty.")
     st.stop()
 
+# =========================================================================================================================
+# =========================================================================================================================
+# ===============================================Filters===================================================================
+# =========================================================================================================================
+# =========================================================================================================================
 
 # ==========================================
 # 9. PURE NATIVE STREAMLIT FILTERS (Tight UI)
 # ==========================================
-with st.sidebar.expander("⚙️ Filter By Day & Time", expanded=False):
+for exp_key in ["exp_day", "exp_avail", "exp_halls", "exp_teachers"]:
+    if exp_key not in st.session_state:
+        st.session_state[exp_key] = False
+
+with st.sidebar.expander("⚙️ Filter By Day & Time", expanded=st.session_state["exp_day"]):
     days_config = {
         1: ("1 Sunday", True),
         2: ("2 Monday", True),
@@ -921,7 +955,7 @@ valid_blocks_df = parsed_df[~parsed_df["ID"].isin(invalid_ids)]
 # ==========================================
 # 9B. ENROLLMENT & AVAILABILITY OVERRIDES
 # ==========================================
-with st.sidebar.expander("⚙️ Filter By Availability", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Availability", expanded=st.session_state["exp_avail"]):
     enrolled_ids_str = st.session_state.get("auto_enrolled", "")
     enrolled_ids = [s.strip() for s in enrolled_ids_str.split(",") if s.strip()]
 
@@ -940,22 +974,15 @@ with st.sidebar.expander("⚙️ Filter By Availability", expanded=False):
         show_enrolled = st.checkbox("Enrolled", value=True)
         show_closed = st.checkbox("Closed", value=False)
         
-        # Filter logic based on the 3 checkboxes
         closed_mask = valid_blocks_df["STATUS"].astype(str).str.contains("مغلقة", na=False)
         is_enrolled_mask = valid_blocks_df["ID"].astype(str).isin(enrolled_ids) if enrolled_ids else pd.Series(False, index=valid_blocks_df.index)
 
         allowed_masks = []
-        
         if show_opened:
-            # Opened sections are those that are NOT closed and NOT enrolled (or just normal open sections)
             allowed_masks.append(~closed_mask & ~is_enrolled_mask)
-            
         if show_enrolled:
-            # Enrolled sections bypass closeness checks completely
             allowed_masks.append(is_enrolled_mask)
-            
         if show_closed:
-            # Closed sections that are not already handled under enrolled
             allowed_masks.append(closed_mask & ~is_enrolled_mask)
 
         if allowed_masks:
@@ -964,13 +991,12 @@ with st.sidebar.expander("⚙️ Filter By Availability", expanded=False):
                 final_mask = final_mask | m
             valid_blocks_df = valid_blocks_df[final_mask]
         else:
-            valid_blocks_df = valid_blocks_df.iloc[0:0] # Clear all if everything is unchecked
-
+            valid_blocks_df = valid_blocks_df.iloc[0:0]
 
 # ==========================================
 # 10. GLOBAL HALL & SHUBA RULES (REQUIRE / BAN)
 # ==========================================
-with st.sidebar.expander("⚙️ Filter By Hall & IDs", expanded=False):
+with st.sidebar.expander("⚙️ Filter By Hall & IDs", expanded=st.session_state["exp_halls"]):
     all_halls = sorted(
         [str(h) for h in raw_df["HALL"].dropna().astype(str).unique() if h.strip()]
     )
@@ -1010,11 +1036,12 @@ if banned_shubas:
 if required_shubas:
     valid_blocks_df = valid_blocks_df[
         valid_blocks_df["ID"].astype(str).isin(required_shubas)
-    ]# ==========================================
+    ]
+
+# ==========================================
 # 11. SUBJECT-SPECIFIC TEACHER RULES
 # ==========================================
-with st.sidebar.expander("⚙️ Filter By teachers", expanded=False):
-    
+with st.sidebar.expander("⚙️ Filter By teachers", expanded=st.session_state["exp_teachers"]):
     all_subjects = sorted([str(c) for c in raw_df["CODE"].astype(str).unique()])
     subject_rules = {}
     
@@ -1059,7 +1086,6 @@ for subj, rules in subject_rules.items():
             )
         ]
 
-
 # ==========================================
 # 12. DATA GROUPING & SOLVER
 # ==========================================
@@ -1088,10 +1114,8 @@ target_subjects = list(sections_by_subject.keys())
 total_required_subjects = len(all_subjects)
 
 if len(target_subjects) < total_required_subjects:
-    st.warning(
-        f"Only {len(target_subjects)} out of {total_required_subjects} valid"
-        " subjects remaining after filters. Check your filters or rules."
-    )
+    st.error("No Valid Schedule found.")
+    st.stop()
 
 @st.cache_data
 def generate_schedules(subjects_dict, targets):
