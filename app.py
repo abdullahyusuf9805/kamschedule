@@ -32,6 +32,25 @@ from selenium.webdriver.chrome.service import Service
 # ==========================================
 st.set_page_config(page_title="Dynamic Timetable Solver", layout="wide")
 
+st.markdown("""
+    <style>
+        /* Import Tajawal from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+
+        /* Apply Tajawal globally to standard text elements and tables */
+        h1, h2, h3, h4, h5, h6, p, label, table, th, td {
+            font-family: 'Tajawal', sans-serif !important;
+        }
+
+        /* Target sidebar text containers and widgets explicitly so subject names use Tajawal */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"], 
+        [data-testid="stSidebar"] label, 
+        [data-testid="stSidebar"] div[data-baseweb="select"] span {
+            font-family: 'Tajawal', sans-serif !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.markdown(
 """
 <style>
@@ -1077,7 +1096,7 @@ if required_shubas:
 # 11. SUBJECT-SPECIFIC TEACHER RULES
 # ==========================================
 with st.sidebar.expander("⚙️ Filter By teachers", expanded=st.session_state["exp_teachers"]):
-    all_subjects = sorted([str(c) for c in raw_df["CODE"].astype(str).unique()])
+    all_subjects = [str(c) for c in raw_df["CODE"].dropna().drop_duplicates().astype(str)]
     subject_rules = {}
     
     if not all_subjects:
@@ -1088,7 +1107,7 @@ with st.sidebar.expander("⚙️ Filter By teachers", expanded=st.session_state[
         subj_name = subj_name_row["NAME"].iloc[0] if not subj_name_row.empty else ""
 
         with st.container(border=True):
-            st.markdown(f"<div dir='rtl' style='font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #ffffff; text-align: right;'>📚 {subj_name}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div dir='rtl' style='font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #ffffff; text-align: right;'>📚 {subj_name}</div>", unsafe_allow_html=True)
             
             teachers_for_subj = sorted(
                 raw_df[raw_df["CODE"].astype(str) == subj]["TEACHER"].astype(str).unique()
@@ -1121,13 +1140,16 @@ for subj, rules in subject_rules.items():
             )
         ]
 
+
+
 # ==========================================
 # 12. DATA GROUPING & SOLVER
 # ==========================================
 sections_by_subject = {}
-for code, group in valid_blocks_df.groupby("CODE"):
+# Use an ordered collection to preserve the exact appearance order from raw_df
+for code, group in valid_blocks_df.groupby("CODE", sort=False):
     sections_by_subject[str(code)] = []
-    for sec_id, sec_group in group.groupby("ID"):
+    for sec_id, sec_group in group.groupby("ID", sort=False):
         blocks = [
             {"day": r["day"], "start_time": r["start_time"]}
             for _, r in sec_group.iterrows()
@@ -1282,9 +1304,6 @@ else:
     if st.session_state.sched_idx >= len(schedules):
         st.session_state.sched_idx = 0
 
-    # --------------------------------------------------------------------------------
-    # UNIFORM HEIGHT & SPACING CSS NORMALIZATION
-    # --------------------------------------------------------------------------------
     st.markdown("""
         <style>
             .stSelectbox > div > div {
@@ -1323,46 +1342,83 @@ else:
         st.rerun()
 
     active_sched = schedules[st.session_state.sched_idx]
+# =============================================================================================================================
+# =============================================================================================================================
+# =============================================================================================================================
 
-    # --- 1. VISUAL VIEW TABLE (RENDERED FIRST) ---
-    # --- 1. VISUAL VIEW TABLE (RENDERED FIRST) ---
+# --- 1. VISUAL VIEW SUBHEADING & TABLE ---
     st.subheader("A. Visual View")
-    html_grid = "<table dir='rtl' style='width:100%; text-align:center; border-collapse: collapse; font-family: sans-serif; background-color: #121212; color: #ffffff;'>"
+    
+    active_hours = set()
+    for section in active_sched:
+        for b in section["blocks"]:
+            active_hours.add(b["start_time"])
+
+    # Table background set to black, grid lines set to subtle dark gray (#333333)
+    html_grid = "<table dir='rtl' style='width:100%; text-align:center; border-collapse: collapse; font-family: \"Tajawal\", sans-serif; background-color: #000000; color: #ffffff; border: 1px solid #333333;'>"
+    
+    # First row (Header) is dark gray (#212121) with white text and dark gray borders
     html_grid += "<tr style='background-color: #212121; color: #ffffff;'>"
-    html_grid += "<th style='border: 1px solid #333333; padding: 8px;'>الوقت</th><th style='border: 1px solid #333333; padding: 8px;'>الأحد</th><th style='border: 1px solid #333333; padding: 8px;'>الاثنين</th><th style='border: 1px solid #333333; padding: 8px;'>الثلاثاء</th><th style='border: 1px solid #333333; padding: 8px;'>الأربعاء</th><th style='border: 1px solid #333333; padding: 8px;'>الخميس</th></tr>"
+    html_grid += "<th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الوقت</th><th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الأحد</th><th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الاثنين</th><th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الثلاثاء</th><th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الأربعاء</th><th style='border: 1px solid #333333; padding: 8px; color: #ffffff;'>الخميس</th></tr>"
 
     col_map_html = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
 
-    for row_idx in range(10): # Changed from 11 to 10 to remove the 18:00 row
-        hour = 8 + row_idx
-        bg_color = "#121212" if row_idx % 2 == 0 else "#000000"
-        html_grid += f"<tr style='background-color: {bg_color}; border: 1px solid #333333;'>"
+    sorted_active_hours = sorted(list(active_hours))
+
+    for hour in sorted_active_hours:
+        html_grid += "<tr style='background-color: #000000; border: 1px solid #333333;'>"
+        
+        # First column (Time column) is dark gray (#212121) with white text
         html_grid += f"<td style='background-color: #212121; color: #ffffff; border: 1px solid #333333; padding: 8px;'><b>{hour}:00</b></td>"
 
         row_cells = [""] * 5
+        row_cell_meta = [{} for _ in range(5)]
+
         for section in active_sched:
             for b in section["blocks"]:
                 if b["start_time"] == hour:
                     c_idx = col_map_html.get(b["day"])
                     if c_idx:
+                        code_val = section.get('code', '')
+                        sec_id = section.get('id', '')
                         raw_hall = str(section.get('hall', '')).replace("ش", "").replace("SHR", "").strip()
-                        hall_display = f"<br><small>({raw_hall})</small>" if raw_hall else ""
                         
-                        row_cells[c_idx - 1] = (
-                            f"<b>{section['code']}</b>{hall_display}"
-                        )
+                        details_display = f"<br><small style='color: #ffffff;'>(شـ {sec_id} - قــ {raw_hall})</small>" if raw_hall else f"<br><small style='color: #ffffff;'>(شـ {sec_id})</small>"
+                        row_cells[c_idx - 1] = f"<b style='color: #ffffff;'>{code_val}</b>{details_display}"
+                        row_cell_meta[c_idx - 1] = {"day": b["day"], "hour": hour}
 
-        for c in row_cells:
-            cell_bg = "#ffffff" if c else "#212121"
-            cell_fg = "#000000" if c else "#888888"
-            html_grid += f"<td style='border: 1px solid #333333; padding: 10px; background-color: {cell_bg}; color: {cell_fg};'>{c}</td>"
+        for idx, c in enumerate(row_cells):
+            day_num = idx + 1 # 1: Sunday, 2: Monday, etc.
+            
+            # Special slot for Monday (2) at 10 AM (10) set to exact hex #220306
+            if not c and day_num == 2 and hour == 10:
+                cell_bg = "#220306"
+                cell_style = f"border: 1px solid #333333; padding: 10px; background-color: {cell_bg}; color: #ffffff;"
+                html_grid += f"<td style='{cell_style}'></td>"
+            elif c:
+                cell_bg = "#000000"
+                html_grid += f"<td style='border: 1px solid #333333; padding: 10px; background-color: {cell_bg}; color: #ffffff;'>{c}</td>"
+            else:
+                # Empty cell with crossed lines pattern matching your dark color palette
+                crossed_lines_bg = (
+                    "background-color: #000000; "
+                    "background-image: linear-gradient(45deg, #16261a 25%, transparent 25%), "
+                    "linear-gradient(-45deg, #16261a 25%, transparent 25%), "
+                    "linear-gradient(45deg, transparent 75%, #16261a 75%), "
+                    "linear-gradient(-45deg, transparent 75%, #16261a 75%); "
+                    "background-size: 16px 16px; "
+                    "background-position: 0 0, 0 8px, 8px -8px, -8px 0px;"
+                )
+                html_grid += f"<td style='border: 1px solid #333333; padding: 10px; {crossed_lines_bg} color: #888888;'></td>"
+
         html_grid += "</tr>"
+
     html_grid += "</table>"
-
     st.markdown(html_grid, unsafe_allow_html=True)
-
-# --- 2. EXCEL VIEW TABLE (RENDERED BELOW) ---
+    
+    # --- 2. EXCEL VIEW SUBHEADING & TABLE ---
     st.subheader("B. Excel View")
+
     excel_rows_html = ""
     for s in active_sched:
         status_val = s.get('status', 'مفتوحة')
@@ -1374,13 +1430,15 @@ else:
         code_val = s.get('code', '')
 
         excel_rows_html += "<tr>"
-        excel_rows_html += f'<td>{status_val}</td>'
-        excel_rows_html += f'<td>{teacher_val}</td>'
-        excel_rows_html += f'<td>{venue_val}</td>'
-        excel_rows_html += f'<td>{hall_val}</td>'
-        excel_rows_html += f'<td>{id_val}</td>'
-        excel_rows_html += f'<td>{name_val}</td>'
-        excel_rows_html += f'<td>{code_val}</td>'
+        # Standard black background for columns 1 to 5
+        excel_rows_html += f'<td style="background-color: #000000; color: #ffffff; border: 1px solid #333333;">{status_val}</td>'
+        excel_rows_html += f'<td style="background-color: #000000; color: #ffffff; border: 1px solid #333333;">{teacher_val}</td>'
+        excel_rows_html += f'<td style="background-color: #000000; color: #ffffff; border: 1px solid #333333;">{venue_val}</td>'
+        excel_rows_html += f'<td style="background-color: #000000; color: #ffffff; border: 1px solid #333333;">{hall_val}</td>'
+        excel_rows_html += f'<td style="background-color: #000000; color: #ffffff; border: 1px solid #333333;">{id_val}</td>'
+        # Highlighted dark gray (#212121) for المقرر and رمز المقرر
+        excel_rows_html += f'<td style="background-color: #212121; color: #ffffff; border: 1px solid #333333;">{name_val}</td>'
+        excel_rows_html += f'<td style="background-color: #212121; color: #ffffff; border: 1px solid #333333;">{code_val}</td>'
         excel_rows_html += "</tr>"
 
     excel_table_html = f"""
@@ -1388,10 +1446,11 @@ else:
         .custom-excel-table {{
             width: 100% !important;
             border-collapse: collapse !important;
-            font-family: sans-serif !important;
+            font-family: 'Tajawal', sans-serif !important;
             font-size: 14px !important;
-            background-color: #121212 !important;
+            background-color: #000000 !important;
             color: #ffffff !important;
+            border: 1px solid #333333 !important;
         }}
         .custom-excel-table th, .custom-excel-table td {{
             border: 1px solid #333333 !important;
@@ -1399,6 +1458,7 @@ else:
             text-align: center !important;
             vertical-align: middle !important;
             border-radius: 0px !important;
+            color: #ffffff !important;
         }}
         .custom-excel-table th {{
             background-color: #212121 !important;
@@ -1414,8 +1474,8 @@ else:
                     <th>الوقت</th>
                     <th>رقم القاعة</th>
                     <th>رقم الشعبة</th>
-                    <th>المقرر</th>
-                    <th>رمز المقرر</th>
+                    <th style="background-color: #212121; color: #ffffff; border: 1px solid #333333;">المقرر</th>
+                    <th style="background-color: #212121; color: #ffffff; border: 1px solid #333333;">رمز المقرر</th>
                 </tr>
             </thead>
             <tbody>
@@ -1426,51 +1486,15 @@ else:
     """
 
     st.markdown(excel_table_html, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Generate the actual excel file buffer for downloading
-    df_excel = pd.DataFrame([{
-        "رمز المقرر": s["code"],
-        "المقرر": s["name"],
-        "رقم الشعبة": s["id"],
-        "رقم القاعة": s["hall"],
-        "الوقت": s["venue"],
-        "المحاضر": s["teacher"],
-        "الحالة": s["status"],
-    } for s in active_sched])
 
-    try:
-        import openpyxl
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df_excel.to_excel(writer, index=False, sheet_name="Schedule")
-        
-        st.download_button(
-            label="📥 Download Current Schedule (Excel)",
-            data=excel_buffer.getvalue(),
-            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    except ModuleNotFoundError:
-        st.error("Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
-        csv_data = df_excel.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Current Schedule (CSV Backup)",
-            data=csv_data,
-            file_name=f"Schedule_Option_{st.session_state.sched_idx + 1}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        
-    
+# =============================================================================================================================
+# =============================================================================================================================    
+# =============================================================================================================================    
     st.markdown("---")
     st.markdown('<div class="center-download">', unsafe_allow_html=True)
     
     col_zip, col_excel = st.columns(2)
     
-    # --- 3. ZIP JPG DOWNLOAD ---
     with col_zip:
         if st.button("Render All as JPGs (ZIP)", key="download_zip_btn", use_container_width=True):
             with st.spinner("Drawing high-res images..."):
@@ -1488,7 +1512,6 @@ else:
                     use_container_width=True
                 )
             
-    # --- 4. ALL SCHEDULES EXCEL DOWNLOAD ---
     with col_excel:
         try:
             import openpyxl
@@ -1496,13 +1519,13 @@ else:
             with pd.ExcelWriter(all_excel_buffer, engine='openpyxl') as writer:
                 for i, sched in enumerate(schedules):
                     df_sched = pd.DataFrame([{
-                        "CODE": s["code"],
-                        "NAME": s["name"],
-                        "ID (ش)": s["id"],
-                        "HALL": s["hall"],
-                        "VENUE": s["venue"],
-                        "TEACHER": s["teacher"],
-                        "STATUS": s["status"],
+                        "رمز المقرر": s["code"],
+                        "المقرر": s["name"],
+                        "رقم الشعبة": s["id"],
+                        "رقم القاعة": s["hall"],
+                        "الوقت": s["venue"],
+                        "المحاضر": s["teacher"],
+                        "الحالة": s["status"],
                     } for s in sched])
                     df_sched.to_excel(writer, index=False, sheet_name=f"Option_{i+1}")
             
@@ -1517,4 +1540,3 @@ else:
             st.error("⚠️ Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
