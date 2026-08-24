@@ -1239,61 +1239,123 @@ def fix_arabic(text):
     return get_display(arabic_reshaper.reshape(str(text)))
 
 def draw_schedule_image(schedule):
-    fig, ax = plt.subplots(figsize=(10, 6))
+    import matplotlib.font_manager as fm
+    
+    # Setup figure with dark background
+    fig, ax = plt.subplots(figsize=(12, 7), facecolor='#000000')
+    ax.set_facecolor('#000000')
     ax.axis("tight")
     ax.axis("off")
 
-    cols = ["الخميس", "الأربعاء", "الثلاثاء", "الاثنين", "الأحد", "الوقت"]
+    # Correct right-to-left column headers matching visual view
+    cols = ["الوقت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"]
     cols_reshaped = [fix_arabic(c) for c in cols]
 
-    cell_text = [["" for _ in range(6)] for _ in range(11)]
-    col_map = {1: 4, 2: 3, 3: 2, 4: 1, 5: 0}
+    # Dynamically find active hours just like the visual view
+    active_hours = set()
+    for section in schedule:
+        for b in section["blocks"]:
+            active_hours.add(b["start_time"])
+    sorted_hours = sorted(list(active_hours))
 
-    for row_idx in range(11):
-        hour = 8 + row_idx
-        cell_text[row_idx][5] = f"{hour}:00"
+    if not sorted_hours:
+        sorted_hours = list(range(8, 13))
+
+    num_rows = len(sorted_hours)
+    cell_text = [["" for _ in range(6)] for _ in range(num_rows)]
+    cell_details = [["" for _ in range(6)] for _ in range(num_rows)]
+    
+    # Map day numbers to column index (Sunday=1 -> col 1, Monday=2 -> col 2, etc.)
+    col_map = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
+
+    for row_idx, hour in enumerate(sorted_hours):
+        cell_text[row_idx][0] = f"{hour}:00"
 
     for section in schedule:
-        cell_label = fix_arabic(f"{section['code']} (ش {section['id']})")
-        for b in section["blocks"]:
-            if 8 <= b["start_time"] <= 18:
-                row_idx = b["start_time"] - 8
-                col_idx = col_map.get(b["day"])
-                if col_idx is not None and row_idx < 11:
-                    cell_text[row_idx][col_idx] = cell_label
+        code_val = section['code']
+        sec_id = section['id']
+        raw_hall = str(section.get('hall', '')).replace("ش", "").replace("SHR", "").strip()
+        hall_str = f" - قــ {raw_hall}" if raw_hall else ""
+        
+        main_label = fix_arabic(code_val)
+        sub_label = fix_arabic(f"(شـ {sec_id}{hall_str})")
 
+        for b in section["blocks"]:
+            if b["start_time"] in sorted_hours:
+                row_idx = sorted_hours.index(b["start_time"])
+                col_idx = col_map.get(b["day"])
+                if col_idx is not None:
+                    cell_text[row_idx][col_idx] = main_label
+                    cell_details[row_idx][col_idx] = sub_label
+
+    # Build Matplotlib table
     table = ax.table(
-        cellText=cell_text,
+        cellText=[["" for _ in range(6)] for _ in range(num_rows)],
         colLabels=cols_reshaped,
         loc="center",
         cellLoc="center",
     )
-    table.scale(1, 2)
+    table.scale(1, 2.5)
 
+    # Check available system font safely
+    available_fonts = fm.get_font_names()
+    chosen_font = "Tajawal" if "Tajawal" in available_fonts else "Segoe UI"
+
+    # Style cells to match the dark theme, borders, and colors precisely
     for (row, col), cell in table.get_celld().items():
-        cell.set_text_props(fontname="Segoe UI", size=12)
+        cell.set_edgecolor("#333333")
+        cell.set_linewidth(1.0)
+        
         if row == 0:
+            # Header Row (Dark Gray)
             cell.set_facecolor("#212121")
-            cell.get_text().set_color("white")
-            cell.get_text().set_weight("bold")
-        elif col == 5:
-            cell.set_facecolor("#212121")
-            cell.get_text().set_color("white")
-            cell.get_text().set_weight("bold")
+            text_obj = cell.get_text()
+            text_obj.set_text(cols_reshaped[col])
+            text_obj.set_fontname(chosen_font)
+            text_obj.set_fontsize(13)
+            text_obj.set_color("white")
+            text_obj.set_weight("bold")
         else:
-            if cell_text[row - 1][col].strip() != "":
-                cell.set_facecolor("#ffffff")
-                cell.get_text().set_color("#000000")
+            r_idx = row - 1
+            hour_val = sorted_hours[r_idx]
+            
+            if col == 0:
+                # Time Column (Dark Gray)
+                cell.set_facecolor("#212121")
+                text_obj = cell.get_text()
+                text_obj.set_text(cell_text[r_idx][0])
+                text_obj.set_fontname(chosen_font)
+                text_obj.set_fontsize(12)
+                text_obj.set_color("white")
+                text_obj.set_weight("bold")
             else:
-                cell.set_facecolor("#424242")
+                day_num = 6 - col  # Maps back columns to days (Sunday=1 to Thursday=5)
+                has_content = cell_text[r_idx][col] != ""
+                
+                if has_content:
+                    # Active Class Cell (Solid Black)
+                    cell.set_facecolor("#000000")
+                    main_str = cell_text[r_idx][col]
+                    sub_str = cell_details[r_idx][col]
+                    text_obj = cell.get_text()
+                    text_obj.set_text(f"{main_str}\n{sub_str}")
+                    text_obj.set_fontname(chosen_font)
+                    text_obj.set_fontsize(11)
+                    text_obj.set_color("white")
+                elif day_num == 2 and hour_val == 10:
+                    # Special red slot for Monday 10:00 AM (#220306)
+                    cell.set_facecolor("#220306")
+                    cell.get_text().set_text("")
+                else:
+                    # Empty cell (Solid Black)
+                    cell.set_facecolor("#000000")
+                    cell.get_text().set_text("")
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="jpg", dpi=300, bbox_inches="tight")
+    plt.savefig(buf, format="jpg", dpi=300, bbox_inches="tight", facecolor='#000000')
     buf.seek(0)
     plt.close(fig)
     return buf.getvalue()
-
-
 
 if not schedules:
     st.warning("No Valid Schedule Found.")
@@ -1490,53 +1552,3 @@ else:
 # =============================================================================================================================
 # =============================================================================================================================    
 # =============================================================================================================================    
-    st.markdown("---")
-    st.markdown('<div class="center-download">', unsafe_allow_html=True)
-    
-    col_zip, col_excel = st.columns(2)
-    
-    with col_zip:
-        if st.button("Render All as JPGs (ZIP)", key="download_zip_btn", use_container_width=True):
-            with st.spinner("Drawing high-res images..."):
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                    for i, sched in enumerate(schedules):
-                        img_bytes = draw_schedule_image(sched)
-                        zip_file.writestr(f"Schedule_Option_{i+1}.jpg", img_bytes)
-       
-                st.download_button(
-                    label="📥 Click Here to Download ZIP",
-                    data=zip_buffer.getvalue(),
-                    file_name="All_Schedules.zip",
-                    mime="application/zip",
-                    use_container_width=True
-                )
-            
-    with col_excel:
-        try:
-            import openpyxl
-            all_excel_buffer = io.BytesIO()
-            with pd.ExcelWriter(all_excel_buffer, engine='openpyxl') as writer:
-                for i, sched in enumerate(schedules):
-                    df_sched = pd.DataFrame([{
-                        "رمز المقرر": s["code"],
-                        "المقرر": s["name"],
-                        "رقم الشعبة": s["id"],
-                        "رقم القاعة": s["hall"],
-                        "الوقت": s["venue"],
-                        "المحاضر": s["teacher"],
-                        "الحالة": s["status"],
-                    } for s in sched])
-                    df_sched.to_excel(writer, index=False, sheet_name=f"Option_{i+1}")
-            
-            st.download_button(
-                label="📥 Download All Schedules (1 Excel File)",
-                data=all_excel_buffer.getvalue(),
-                file_name="All_Generated_Schedules.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        except ModuleNotFoundError:
-            st.error("⚠️ Please add 'openpyxl' to your requirements.txt to enable Excel downloads.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
